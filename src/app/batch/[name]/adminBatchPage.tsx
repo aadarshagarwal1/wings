@@ -107,6 +107,19 @@ interface LectureContent {
   updatedAt: string;
 }
 
+// Interface for Notice Content
+interface NoticeContent {
+  _id: string;
+  title: string;
+  description?: string;
+  url?: string;
+  attachmentUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  batchId?: string;
+  createdBy?: string;
+}
+
 export default function AdminBatchPage({
   params,
 }: {
@@ -179,6 +192,18 @@ export default function AdminBatchPage({
   const [deleteAttendanceDialogOpen, setDeleteAttendanceDialogOpen] = useState(false);
   const [deletingAttendance, setDeletingAttendance] = useState(false);
   const [selectedAttendanceId, setSelectedAttendanceId] = useState<string | null>(null);
+
+  // State for notices functionality
+  const [addNoticeDialogOpen, setAddNoticeDialogOpen] = useState(false);
+  const [noticeTitle, setNoticeTitle] = useState("");
+  const [noticeDescription, setNoticeDescription] = useState("");
+  const [noticeFile, setNoticeFile] = useState<File | null>(null);
+  const [noticeFileError, setNoticeFileError] = useState("");
+  const [creatingNotice, setCreatingNotice] = useState(false);
+  const noticeFileInputRef = useRef<HTMLInputElement>(null);
+  const [deleteNoticeDialogOpen, setDeleteNoticeDialogOpen] = useState(false);
+  const [deletingNotice, setDeletingNotice] = useState(false);
+  const [selectedNotice, setSelectedNotice] = useState<NoticeContent | null>(null);
 
   const handleDeleteAttendance = async () => {
     if (!selectedAttendanceRecord) return;
@@ -554,6 +579,12 @@ export default function AdminBatchPage({
     }
   }, [batch]);
 
+  useEffect(() => {
+    if (batch?.notices && (batch as any).notices.length > 0) {
+      console.log("Notice objects:", (batch as any).notices);
+    }
+  }, [batch]);
+
   const copyInviteCode = () => {
     if (batch?.inviteCode) {
       navigator.clipboard.writeText(batch.inviteCode);
@@ -674,6 +705,113 @@ export default function AdminBatchPage({
     setAttendanceDetailsDialogOpen(true);
   };
 
+  // Notices functions
+  const handleNoticeFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+
+    if (files && files.length > 0) {
+      const file = files[0];
+      // Validate file type
+      if (file.type !== "application/pdf") {
+        setNoticeFileError("Only PDF files are allowed");
+        setNoticeFile(null);
+        return;
+      }
+
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        setNoticeFileError("File size should be less than 5MB");
+        setNoticeFile(null);
+        return;
+      }
+
+      setNoticeFile(file);
+      setNoticeFileError("");
+    }
+  };
+
+  const resetNoticeForm = () => {
+    setNoticeTitle("");
+    setNoticeDescription("");
+    setNoticeFile(null);
+    setNoticeFileError("");
+  };
+
+  const handleCreateNotice = async () => {
+    if (!noticeTitle.trim()) {
+      return;
+    }
+
+    try {
+      setCreatingNotice(true);
+      let fileUrl = "";
+
+      // Upload file if provided
+      if (noticeFile) {
+        // Create form data for file upload
+        const formData = new FormData();
+        formData.append("file", noticeFile);
+
+        // Upload file
+        const uploadRes = await axios.post("/api/upload", formData, {
+          timeout: 60000,
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+
+        // Get the file URL
+        fileUrl = uploadRes.data?.secure_url || uploadRes.data?.url || uploadRes.data?.result?.secure_url;
+      }
+
+      // Save notice to database
+      const noticeData = {
+        title: noticeTitle.trim(),
+        description: noticeDescription.trim() || undefined,
+        batchId: (batch as any)._id,
+        ...(fileUrl && { attachmentUrl: fileUrl }),
+        createdBy: (user as any)._id,
+      };
+      console.log(fileUrl);
+      const res = await axios.post("/api/notice/create", noticeData);
+
+      if (res.status === 201) {
+        toast.success("Notice created successfully");
+        await fetchBatch();
+        setAddNoticeDialogOpen(false);
+        resetNoticeForm();
+      }
+    } catch (error: any) {
+      console.log(error);
+      toast.error(error.response?.data?.message || "Failed to create notice");
+    } finally {
+      setCreatingNotice(false);
+    }
+  };
+
+  const handleDeleteNotice = async () => {
+    if (!selectedNotice) return;
+
+    try {
+      setDeletingNotice(true);
+      const res = await axios.post("/api/notice/delete", {
+        noticeId: selectedNotice._id,
+      });
+
+      if (res.status === 200) {
+        toast.success("Notice deleted successfully");
+        await fetchBatch();
+        setDeleteNoticeDialogOpen(false);
+        setSelectedNotice(null);
+      }
+    } catch (error: any) {
+      console.log(error);
+      toast.error(error.response?.data?.message || "Failed to delete notice");
+    } finally {
+      setDeletingNotice(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto py-6">
@@ -717,11 +855,12 @@ export default function AdminBatchPage({
         onValueChange={setActiveTab}
         className="w-full"
       >
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="students">Students</TabsTrigger>
           <TabsTrigger value="teachers">Teachers</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="lectures">Lectures</TabsTrigger>
+          <TabsTrigger value="notices">Notices</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
         </TabsList>
 
@@ -1645,6 +1784,209 @@ export default function AdminBatchPage({
           </Card>
         </TabsContent>
 
+        <TabsContent value="notices">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Notices</CardTitle>
+              <Button 
+                size="sm" 
+                className="flex items-center gap-1"
+                onClick={() => setAddNoticeDialogOpen(true)}
+              >
+                <Plus className="h-4 w-4" />
+                <span>Create Notice</span>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {(batch as any).notices && (batch as any).notices.length > 0 ? (
+                <div className="space-y-4">
+                  {(batch as any).notices.map((notice: NoticeContent, index: number) => (
+                    <Collapsible
+                      key={index}
+                      open={expandedSections[notice._id]}
+                      onOpenChange={() => toggleSectionExpanded(notice._id)}
+                      className="border rounded-lg"
+                    >
+                      <div className="flex items-center justify-between p-4 border-b bg-muted/30">
+                        <div className="flex items-center gap-3">
+                          <CollapsibleTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="p-0 h-8 w-8"
+                            >
+                              {expandedSections[notice._id] ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </CollapsibleTrigger>
+                          <div>
+                            <h3 className="text-base font-medium">{notice.title}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {format(new Date(notice.createdAt), "MMM dd, yyyy")}
+                            </p>
+                          </div>
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger className="h-8 w-8 flex items-center justify-center rounded-md hover:bg-muted">
+                            <MoreVertical className="h-4 w-4" />
+                            <span className="sr-only">Open menu</span>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setSelectedNotice(notice);
+                                setDeleteNoticeDialogOpen(true);
+                              }}
+                              className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span>Delete</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+
+                      <CollapsibleContent>
+                        <div className="p-4 space-y-3">
+                          {notice.description && (
+                            <div className="mb-4">
+                              <h4 className="text-sm font-medium mb-1">Description</h4>
+                              <p className="text-sm text-muted-foreground">{notice.description}</p>
+                            </div>
+                          )}
+                          {(notice.url || notice.attachmentUrl) && (
+                            <div>
+                              <h4 className="text-sm font-medium mb-2">Attachment</h4>
+                              <Card className="flex flex-col">
+                                <div className="px-2.5 py-[1px]">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <div className="truncate">
+                                      <p className="text-sm font-medium truncate leading-tight">
+                                        Notice Attachment
+                                      </p>
+                                      <div className="flex items-center text-xs text-muted-foreground">
+                                        <FileText className="h-3 w-3 mr-1" />
+                                        <span>
+                                          {format(new Date(notice.createdAt), "MMM dd, yyyy")}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-0.5 ml-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={() => {
+                                          const fileUrl = notice.url || notice.attachmentUrl;
+                                          if (!fileUrl) return;
+                                          
+                                          let urlToOpen = fileUrl;
+                                          if (
+                                            urlToOpen.includes("cloudinary.com") &&
+                                            urlToOpen.includes("/image/upload/") &&
+                                            urlToOpen.toLowerCase().endsWith(".pdf")
+                                          ) {
+                                            urlToOpen = urlToOpen.replace(
+                                              "/image/upload/",
+                                              "/raw/upload/"
+                                            );
+                                          }
+                                          window.open(urlToOpen, "_blank");
+                                        }}
+                                      >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={() => {
+                                          const fileUrl = notice.url || notice.attachmentUrl;
+                                          if (!fileUrl) return;
+
+                                          // Fix Cloudinary URL if needed (for PDFs)
+                                          let urlToDownload = fileUrl;
+                                          if (
+                                            urlToDownload.includes("cloudinary.com") &&
+                                            urlToDownload.includes("/image/upload/") &&
+                                            urlToDownload.toLowerCase().endsWith(".pdf")
+                                          ) {
+                                            urlToDownload = urlToDownload.replace(
+                                              "/image/upload/",
+                                              "/raw/upload/"
+                                            );
+                                          }
+
+                                          // Show loading message
+                                          const toastId = toast.loading(
+                                            "Preparing download..."
+                                          );
+
+                                          // Try direct download using fetch
+                                          fetch(urlToDownload)
+                                            .then((response) => {
+                                              if (!response.ok) {
+                                                throw new Error(
+                                                  `HTTP error! Status: ${response.status}`
+                                                );
+                                              }
+                                              return response.blob();
+                                            })
+                                            .then((blob) => {
+                                              // Create a blob URL for the PDF
+                                              const blobUrl = URL.createObjectURL(blob);
+
+                                              // Create a temporary anchor element for download
+                                              const downloadLink = document.createElement("a");
+                                              downloadLink.href = blobUrl;
+                                              downloadLink.download = "notice_attachment.pdf";
+                                              document.body.appendChild(downloadLink);
+                                              downloadLink.click();
+
+                                              // Clean up
+                                              document.body.removeChild(downloadLink);
+                                              URL.revokeObjectURL(blobUrl);
+
+                                              // Show success message
+                                              toast.success("Download started", {
+                                                id: toastId,
+                                              });
+                                            })
+                                            .catch((error) => {
+                                              console.error(
+                                                "Download failed:",
+                                                error
+                                              );
+                                              toast.error(
+                                                "Download failed. Try again or save directly from viewer.",
+                                                { id: toastId }
+                                              );
+                                            });
+                                        }}
+                                      >
+                                        <FileText className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </Card>
+                            </div>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">No notices available</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="attendance">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -2225,6 +2567,132 @@ export default function AdminBatchPage({
               disabled={deletingAttendance}
             >
               {deletingAttendance ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Notice Dialog */}
+      <Dialog
+        open={addNoticeDialogOpen}
+        onOpenChange={(open) => {
+          setAddNoticeDialogOpen(open);
+          if (!open) resetNoticeForm();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Notice</DialogTitle>
+            <DialogDescription>
+              Create a new notice for all batch members.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="notice-title">
+                Title <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="notice-title"
+                placeholder="Enter notice title"
+                value={noticeTitle}
+                onChange={(e) => setNoticeTitle(e.target.value)}
+              />
+              {!noticeTitle.trim() && (
+                <p className="text-sm text-destructive mt-1">
+                  Title is required
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="notice-description">Description</Label>
+              <Textarea
+                id="notice-description"
+                placeholder="Enter notice details"
+                value={noticeDescription}
+                onChange={(e) => setNoticeDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="notice-file">Attachment (Optional)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  ref={noticeFileInputRef}
+                  id="notice-file"
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleNoticeFileChange}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => noticeFileInputRef.current?.click()}
+                  className="w-full"
+                >
+                  {noticeFile ? noticeFile.name : "Select PDF File (Optional)"}
+                </Button>
+              </div>
+              {noticeFileError && (
+                <p className="text-sm text-destructive mt-1">{noticeFileError}</p>
+              )}
+              {noticeFile && (
+                <p className="text-sm text-muted-foreground mt-1">
+                  Size: {(noticeFile.size / (1024 * 1024)).toFixed(2)} MB
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              variant="outline"
+              onClick={() => setAddNoticeDialogOpen(false)}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateNotice}
+              disabled={!noticeTitle.trim() || creatingNotice}
+              className="w-full sm:w-auto"
+            >
+              {creatingNotice ? "Creating..." : "Create Notice"}
+            </Button>
+          </DialogFooter>
+          {creatingNotice && noticeFile && (
+            <div className="mt-2 text-center text-sm text-muted-foreground">
+              Uploading attachment... This may take a moment.
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Notice Dialog */}
+      <Dialog
+        open={deleteNoticeDialogOpen}
+        onOpenChange={setDeleteNoticeDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Notice</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{selectedNotice?.title}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteNoticeDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteNotice}
+              disabled={deletingNotice}
+            >
+              {deletingNotice ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
