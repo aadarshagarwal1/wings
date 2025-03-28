@@ -64,6 +64,22 @@ export default function BatchPage() {
   const params = useParams();
   const batchName = params.name as string;
   const resolvedParams = { name: batchName };
+  
+  const changePassword = async () => {
+    try {
+      await axios.post("/api/users/send-reset-email", {
+        email: user.email,
+        userId: user._id,
+      });
+      toast.success("Check inbox for password reset link");
+    } catch (error: any) {
+      toast.error(
+        error.response?.data?.message || "Failed to send reset email"
+      );
+      console.log(error);
+    }
+  };
+  
   const logout = async () => {
     try {
       const response = await axios.post("/api/users/logout");
@@ -124,6 +140,12 @@ export default function BatchPage() {
                     </div>
                   )}
                 </div>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={changePassword}>
+                  <Settings className="h-4 w-4" />
+                  <span>Change Password</span>
+                </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={logout}>
