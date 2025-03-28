@@ -3,6 +3,7 @@ import { User } from "./user.model";
 import { Notice } from "./notice.model";
 import { Section } from "./section.model";
 import { Request } from "./request.model";
+import { Attendance } from "./attendance.model";
 enum UserStatus {
   PENDING = "pending",
   APPROVED = "approved",
@@ -18,6 +19,7 @@ export interface Batch {
   notices: Notice[];
   inviteCode: string;
   requests: Request[];
+  attendance: Attendance[] | any[];
 }
 
 const batchSchema = new Schema<Batch>({
@@ -70,6 +72,12 @@ const batchSchema = new Schema<Batch>({
     {
       type: Schema.Types.ObjectId,
       ref: "Request",
+    },
+  ],
+  attendance: [
+    {
+      type: Schema.Types.ObjectId,
+      ref: "Attendance",
     },
   ],
 });

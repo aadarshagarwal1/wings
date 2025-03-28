@@ -61,7 +61,7 @@ const attendanceSchema = new Schema<Attendance>({
 });
 
 const Attendance =
-  mongoose.models.Attendance ||
+  (mongoose.models && mongoose.models.Attendance) || // Check if models exist first
   mongoose.model<Attendance>("Attendance", attendanceSchema);
 
 export default Attendance;

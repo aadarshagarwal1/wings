@@ -21,6 +21,8 @@ import {
   ChevronUp,
   FileText,
   ExternalLink,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { Section } from "@/models/section.model";
 import { format } from "date-fns";
@@ -29,6 +31,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { useAppContext } from "@/context";
+import { AttendanceStatus } from "@/models/attendance.model";
 
 // Update interface to match the Note model structure from MongoDB
 interface NoteContent {
@@ -50,6 +54,22 @@ interface LectureContent {
   updatedAt: string;
 }
 
+// Add interface for attendance
+interface AttendanceRecord {
+  _id: string;
+  batchId: string;
+  subject: string;
+  period: number;
+  record: {
+    student: string;
+    status: AttendanceStatus;
+    _id: string;
+  }[];
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
+}
+
 export default function StudentBatchPage({
   params,
 }: {
@@ -62,6 +82,7 @@ export default function StudentBatchPage({
   const [expandedSections, setExpandedSections] = useState<
     Record<string, boolean>
   >({});
+  const { user } = useAppContext();
 
   const fetchBatch = async () => {
     try {
@@ -458,7 +479,52 @@ export default function StudentBatchPage({
               <CardTitle>My Attendance</CardTitle>
             </CardHeader>
             <CardContent>
-              <p>View your attendance records here.</p>
+              {(batch as any).attendance && (batch as any).attendance.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Subject</TableHead>
+                      <TableHead>Period</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(batch as any).attendance?.map((record: any, index: number) => {
+                      // Find the current student's attendance status
+                      const studentRecord = record.record.find(
+                        (r: any) => r.student === (user as any)._id
+                      );
+                      const status = studentRecord ? studentRecord.status : null;
+                      
+                      return (
+                        <TableRow key={index}>
+                          <TableCell>{format(new Date(record.createdAt), "MMM dd, yyyy")}</TableCell>
+                          <TableCell>{record.subject}</TableCell>
+                          <TableCell>{record.period}</TableCell>
+                          <TableCell className="text-center">
+                            {status === AttendanceStatus.present ? (
+                              <div className="flex justify-center items-center">
+                                <CheckCircle2 className="h-5 w-5 text-green-500 mr-1" /> 
+                                <span>Present</span>
+                              </div>
+                            ) : status === AttendanceStatus.absent ? (
+                              <div className="flex justify-center items-center">
+                                <XCircle className="h-5 w-5 text-red-500 mr-1" /> 
+                                <span>Absent</span>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">Not recorded</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">No attendance records available.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

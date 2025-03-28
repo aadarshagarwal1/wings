@@ -32,6 +32,8 @@ import {
   FileText,
   ExternalLink,
   Upload,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { Section } from "@/models/section.model";
 import {
@@ -53,6 +55,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { useAppContext } from "@/context";
+import { Switch } from "@/components/ui/switch";
+import { AttendanceStatus } from "@/models/attendance.model";
 
 interface BatchUser {
   user: User[];
@@ -80,8 +85,21 @@ interface LectureContent {
   updatedAt: string;
 }
 
-// Remove other type definitions since we'll use 'any' for simplicity
-// in the content mapping to avoid TypeScript errors
+// Add interface for attendance
+interface AttendanceRecord {
+  _id: string;
+  batchId: string;
+  subject: string;
+  period: number;
+  record: {
+    student: string;
+    status: AttendanceStatus;
+    _id: string;
+  }[];
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
+}
 
 export default function TeacherBatchPage({
   params,
@@ -135,6 +153,23 @@ export default function TeacherBatchPage({
   const [selectedLecture, setSelectedLecture] = useState<LectureContent | null>(
     null
   );
+
+  // Add these state variables for attendance
+  const [createAttendanceDialogOpen, setCreateAttendanceDialogOpen] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [period, setPeriod] = useState<number | string>("");
+  const [studentAttendance, setStudentAttendance] = useState<{ 
+    studentId: string;
+    name: string;
+    status: AttendanceStatus;
+  }[]>([]);
+  const [creatingAttendance, setCreatingAttendance] = useState(false);
+  const [attendanceDetailsDialogOpen, setAttendanceDetailsDialogOpen] = useState(false);
+  const [selectedAttendanceRecord, setSelectedAttendanceRecord] = useState<any>(null);
+  const [deleteAttendanceDialogOpen, setDeleteAttendanceDialogOpen] = useState(false);
+  const [deletingAttendance, setDeletingAttendance] = useState(false);
+
+  const { user } = useAppContext();
 
   const fetchBatch = async () => {
     try {
@@ -516,6 +551,112 @@ export default function TeacherBatchPage({
     setLectureTitle("");
     setLectureDescription("");
     setLectureUrl("");
+  };
+
+  // Add this function to handle deleting attendance
+  const handleDeleteAttendance = async () => {
+    if (!selectedAttendanceRecord) return;
+
+    try {
+      setDeletingAttendance(true);
+      const res = await axios.delete("/api/attendance/delete", {
+        data: { attendanceId: selectedAttendanceRecord._id },
+      });
+
+      if (res.status === 200) {
+        toast.success("Attendance record deleted successfully");
+        await fetchBatch();
+        setDeleteAttendanceDialogOpen(false);
+        setSelectedAttendanceRecord(null);
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to delete attendance record");
+    } finally {
+      setDeletingAttendance(false);
+    }
+  };
+
+  // Add this function to prepare student attendance data
+  const prepareAttendanceDialog = () => {
+    if (batch && Array.isArray((batch as any).users)) {
+      const students = ((batch as any).users)
+        .filter(
+          (user: any) =>
+            user.status === "approved" &&
+            Array.isArray(user.user) &&
+            user.user[0]?.role === "student"
+        )
+        .map((userData: any) => {
+          const student = userData.user[0];
+          return {
+            studentId: (student as any)._id,
+            name: student?.name || '',
+            status: AttendanceStatus.present,
+          };
+        });
+      
+      setStudentAttendance(students);
+      setSubject("");
+      setPeriod("");
+      setCreateAttendanceDialogOpen(true);
+    }
+  };
+  
+  // Add this function to toggle attendance status
+  const toggleAttendanceStatus = (studentId: string) => {
+    setStudentAttendance((prev) => 
+      prev.map((student) => 
+        student.studentId === studentId 
+          ? { 
+              ...student, 
+              status: student.status === AttendanceStatus.present 
+                ? AttendanceStatus.absent 
+                : AttendanceStatus.present 
+            } 
+          : student
+      )
+    );
+  };
+  
+  // Add this function to create attendance record
+  const createAttendance = async () => {
+    if (!subject.trim() || !period || studentAttendance.length === 0) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+    
+    try {
+      setCreatingAttendance(true);
+      
+      const record = studentAttendance.map((student) => ({
+        student: student.studentId,
+        status: student.status,
+      }));
+      
+      const res = await axios.post("/api/attendance/create", {
+        batchId: (batch as any)._id,
+        record,
+        subject: subject.trim(),
+        period: Number(period),
+        createdById: (user as any)._id,
+      });
+      
+      if (res.status === 201) {
+        toast.success("Attendance record created successfully");
+        setCreateAttendanceDialogOpen(false);
+        await fetchBatch();
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || "Failed to create attendance record");
+    } finally {
+      setCreatingAttendance(false);
+    }
+  };
+
+  // Add this function to handle opening the attendance details dialog
+  const handleViewAttendanceDetails = (record: any) => {
+    setSelectedAttendanceRecord(record);
+    setAttendanceDetailsDialogOpen(true);
   };
 
   if (loading) {
@@ -1111,11 +1252,79 @@ export default function TeacherBatchPage({
 
         <TabsContent value="attendance">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Attendance</CardTitle>
+              <Button 
+                size="sm" 
+                className="flex items-center gap-1"
+                onClick={prepareAttendanceDialog}
+              >
+                <Plus className="h-4 w-4" />
+                <span>Create Attendance</span>
+              </Button>
             </CardHeader>
             <CardContent>
-              <p>Mark and view attendance records here.</p>
+              {(batch as any).attendance && (batch as any).attendance.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Subject</TableHead>
+                      <TableHead>Period</TableHead>
+                      <TableHead className="text-center">Present</TableHead>
+                      <TableHead className="text-center">Absent</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(batch as any).attendance?.map((record: any, index: number) => {
+                      // Calculate present and absent counts
+                      const presentCount = record.record.filter((r: any) => r.status === AttendanceStatus.present).length;
+                      const absentCount = record.record.filter((r: any) => r.status === AttendanceStatus.absent).length;
+                      
+                      return (
+                        <TableRow key={index}>
+                          <TableCell>{format(new Date(record.createdAt), "MMM dd, yyyy")}</TableCell>
+                          <TableCell>{record.subject}</TableCell>
+                          <TableCell>{record.period}</TableCell>
+                          <TableCell className="text-center">{presentCount}</TableCell>
+                          <TableCell className="text-center">{absentCount}</TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <span className="sr-only">Open menu</span>
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    handleViewAttendanceDetails(record);
+                                  }}
+                                >
+                                  View Details
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedAttendanceRecord(record);
+                                    setDeleteAttendanceDialogOpen(true);
+                                  }}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">No attendance records available.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1429,6 +1638,197 @@ export default function TeacherBatchPage({
               disabled={deletingLecture}
             >
               {deletingLecture ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Attendance Dialog */}
+      <Dialog 
+        open={createAttendanceDialogOpen} 
+        onOpenChange={setCreateAttendanceDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Create Attendance Record</DialogTitle>
+            <DialogDescription>
+              Take attendance for the class session. Mark students as present or absent.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="subject">
+                  Subject <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="subject"
+                  placeholder="Enter subject name"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="period">
+                  Period <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="period"
+                  type="number"
+                  placeholder="Enter period number"
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value)}
+                  min="1"
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Students</Label>
+              {studentAttendance.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead className="w-[120px] text-center">Present</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {studentAttendance.map((student, index) => (
+                      <TableRow key={index}>
+                        <TableCell>{student.name}</TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            {student.status === AttendanceStatus.present ? (
+                              <CheckCircle2 className="h-5 w-5 text-green-500" />
+                            ) : (
+                              <XCircle className="h-5 w-5 text-red-500" />
+                            )}
+                            <Switch
+                              checked={student.status === AttendanceStatus.present}
+                              onCheckedChange={() => toggleAttendanceStatus(student.studentId)}
+                            />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">
+                  No students in this batch
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateAttendanceDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={createAttendance}
+              disabled={!subject.trim() || !period || studentAttendance.length === 0 || creatingAttendance}
+            >
+              {creatingAttendance ? "Saving..." : "Save Attendance"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Attendance Details Dialog */}
+      <Dialog
+        open={attendanceDetailsDialogOpen}
+        onOpenChange={setAttendanceDetailsDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Attendance Details</DialogTitle>
+            <DialogDescription>
+              {selectedAttendanceRecord && (
+                <>
+                  Subject: {selectedAttendanceRecord.subject} | 
+                  Period: {selectedAttendanceRecord.period} | 
+                  Date: {format(new Date(selectedAttendanceRecord.createdAt), "MMM dd, yyyy")}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {selectedAttendanceRecord && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Student</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selectedAttendanceRecord.record.map((item: any, index: number) => {
+                    // Find student name from batch users data
+                    const studentUser = (batch as any).users?.find(
+                      (u: any) => (u.user[0] as any)._id === item.student
+                    );
+                    const studentName = studentUser ? studentUser.user[0]?.name : "Unknown Student";
+                    
+                    return (
+                      <TableRow key={index}>
+                        <TableCell>{studentName}</TableCell>
+                        <TableCell className="text-center">
+                          {item.status === AttendanceStatus.present ? (
+                            <div className="flex justify-center items-center">
+                              <CheckCircle2 className="h-5 w-5 text-green-500 mr-1" /> 
+                              <span>Present</span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-center items-center">
+                              <XCircle className="h-5 w-5 text-red-500 mr-1" /> 
+                              <span>Absent</span>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setAttendanceDetailsDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Attendance Dialog */}
+      <Dialog
+        open={deleteAttendanceDialogOpen}
+        onOpenChange={setDeleteAttendanceDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Attendance Record</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this attendance record? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteAttendanceDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAttendance}
+              disabled={deletingAttendance}
+            >
+              {deletingAttendance ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

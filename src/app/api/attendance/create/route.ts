@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       batch: batchId,
       subject,
       period,
-      createAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000), $lte: new Date() },
+      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000), $lte: new Date() },
     });
     if (existingAttendance) {
       return NextResponse.json({ error: "Attendance already exists" }, { status: 400 });

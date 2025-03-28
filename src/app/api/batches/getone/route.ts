@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
         lectures: { $first: "$lectures" },
         notices: { $first: "$notices" },
         requests: { $first: "$requests" },
+        attendance: { $first: "$attendance" },
       },
     },
     {
@@ -139,6 +140,37 @@ export async function GET(request: NextRequest) {
               localField: "sentBy",
               foreignField: "_id",
               as: "sentBy",
+            },
+          },
+        ],
+      },
+    },
+    {
+      $lookup: {
+        from: "attendances",
+        localField: "attendance",
+        foreignField: "_id",
+        as: "attendance",
+        pipeline: [
+          {
+            $lookup: {
+              from: "users",
+              localField: "record.student",
+              foreignField: "_id",
+              as: "students",
+            },
+          },
+          {
+            $lookup: {
+              from: "users",
+              localField: "createdBy",
+              foreignField: "_id",
+              as: "createdBy",
+            },
+          },
+          {
+            $addFields: {
+              createdBy: { $arrayElemAt: ["$createdBy", 0] },
             },
           },
         ],
