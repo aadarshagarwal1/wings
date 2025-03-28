@@ -28,6 +28,14 @@ import AdminBatchPage from "./adminBatchPage";
 import StudentBatchPage from "./studentBatchPage";
 import TeacherBatchPage from "./teacherBatchPage";
 import Link from "next/link";
+
+// Custom styles for profile tooltip
+const profileStyles = `
+  .profile-hover-container:hover .profile-tooltip {
+    display: block;
+  }
+`;
+
 function SidebarTrigger() {
   const { toggleSidebar, isMobile, state } = useSidebar();
 
@@ -79,6 +87,7 @@ export default function BatchPage() {
   return (
     <SidebarProvider defaultOpen>
       <div className="flex flex-row min-h-screen relative">
+        <style dangerouslySetInnerHTML={{ __html: profileStyles }} />
         <SidebarTrigger />
         <Sidebar collapsible="icon">
           <SidebarHeader className="border-b border-border p-4">
@@ -100,16 +109,21 @@ export default function BatchPage() {
           <SidebarHeader className="border-t border-border">
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton>
-                  <User className="h-4 w-4" />
-                  <span>Profile</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton>
-                  <Settings className="h-4 w-4" />
-                  <span>Settings</span>
-                </SidebarMenuButton>
+                <div className="relative profile-hover-container">
+                  <SidebarMenuButton className="profile-button">
+                    <User className="h-4 w-4" />
+                    <span>Profile</span>
+                  </SidebarMenuButton>
+                  {user && (
+                    <div className="absolute bottom-full left-0 mb-2 z-50 hidden profile-tooltip">
+                      <div className="flex flex-col gap-1 bg-popover text-popover-foreground rounded-md shadow-md p-3 min-w-[200px]">
+                        <p className="font-medium">{user.name}</p>
+                        <p className="text-xs text-muted-foreground">{user.email}</p>
+                        <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton onClick={logout}>
