@@ -85,6 +85,19 @@ interface LectureContent {
   updatedAt: string;
 }
 
+// Interface for Notice Content
+interface NoticeContent {
+  _id: string;
+  title: string;
+  description?: string;
+  url?: string;
+  attachmentUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  batchId?: string;
+  createdBy?: string;
+}
+
 // Add interface for attendance
 interface AttendanceRecord {
   _id: string;
@@ -684,16 +697,17 @@ export default function TeacherBatchPage({
       <h1 className="text-3xl font-bold mb-6">Batch: {params.name}</h1>
 
       <Tabs
-        defaultValue={activeTab}
+        defaultValue="students"
         value={activeTab}
         onValueChange={setActiveTab}
         className="w-full"
       >
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="students">Students</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="lectures">Lectures</TabsTrigger>
           <TabsTrigger value="attendance">Attendance</TabsTrigger>
+          <TabsTrigger value="notices">Notices</TabsTrigger>
         </TabsList>
 
         <TabsContent value="students">
@@ -1324,6 +1338,183 @@ export default function TeacherBatchPage({
                 </Table>
               ) : (
                 <p className="text-center text-muted-foreground py-4">No attendance records available.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="notices">
+          <Card>
+            <CardHeader>
+              <CardTitle>Notices</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(batch as any).notices && (batch as any).notices.length > 0 ? (
+                <div className="space-y-4">
+                  {(batch as any).notices.map((notice: NoticeContent, index: number) => (
+                    <Collapsible
+                      key={index}
+                      open={expandedSections[notice._id]}
+                      onOpenChange={() => toggleSectionExpanded(notice._id)}
+                      className="border rounded-lg"
+                    >
+                      <div className="flex items-center justify-between p-4 border-b bg-muted/30">
+                        <div className="flex items-center gap-3">
+                          <CollapsibleTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="p-0 h-8 w-8"
+                            >
+                              {expandedSections[notice._id] ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </CollapsibleTrigger>
+                          <div>
+                            <h3 className="text-base font-medium">{notice.title}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {format(new Date(notice.createdAt), "MMM dd, yyyy")}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <CollapsibleContent>
+                        <div className="p-4 space-y-3">
+                          {notice.description && (
+                            <div className="mb-4">
+                              <h4 className="text-sm font-medium mb-1">Description</h4>
+                              <p className="text-sm text-muted-foreground">{notice.description}</p>
+                            </div>
+                          )}
+                          {(notice.url || notice.attachmentUrl) && (
+                            <div>
+                              <h4 className="text-sm font-medium mb-2">Attachment</h4>
+                              <Card className="flex flex-col">
+                                <div className="px-2.5 py-[1px]">
+                                  <div className="flex items-center justify-between gap-1">
+                                    <div className="truncate">
+                                      <p className="text-sm font-medium truncate leading-tight">
+                                        Notice Attachment
+                                      </p>
+                                      <div className="flex items-center text-xs text-muted-foreground">
+                                        <FileText className="h-3 w-3 mr-1" />
+                                        <span>
+                                          {format(new Date(notice.createdAt), "MMM dd, yyyy")}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-0.5 ml-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={() => {
+                                          const fileUrl = notice.url || notice.attachmentUrl;
+                                          if (!fileUrl) return;
+                                          
+                                          let urlToOpen = fileUrl;
+                                          if (
+                                            urlToOpen.includes("cloudinary.com") &&
+                                            urlToOpen.includes("/image/upload/") &&
+                                            urlToOpen.toLowerCase().endsWith(".pdf")
+                                          ) {
+                                            urlToOpen = urlToOpen.replace(
+                                              "/image/upload/",
+                                              "/raw/upload/"
+                                            );
+                                          }
+                                          window.open(urlToOpen, "_blank");
+                                        }}
+                                      >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={() => {
+                                          const fileUrl = notice.url || notice.attachmentUrl;
+                                          if (!fileUrl) return;
+
+                                          // Fix Cloudinary URL if needed (for PDFs)
+                                          let urlToDownload = fileUrl;
+                                          if (
+                                            urlToDownload.includes("cloudinary.com") &&
+                                            urlToDownload.includes("/image/upload/") &&
+                                            urlToDownload.toLowerCase().endsWith(".pdf")
+                                          ) {
+                                            urlToDownload = urlToDownload.replace(
+                                              "/image/upload/",
+                                              "/raw/upload/"
+                                            );
+                                          }
+
+                                          // Show loading message
+                                          const toastId = toast.loading(
+                                            "Preparing download..."
+                                          );
+
+                                          // Try direct download using fetch
+                                          fetch(urlToDownload)
+                                            .then((response) => {
+                                              if (!response.ok) {
+                                                throw new Error(
+                                                  `HTTP error! Status: ${response.status}`
+                                                );
+                                              }
+                                              return response.blob();
+                                            })
+                                            .then((blob) => {
+                                              // Create a blob URL for the PDF
+                                              const blobUrl = URL.createObjectURL(blob);
+
+                                              // Create a temporary anchor element for download
+                                              const downloadLink = document.createElement("a");
+                                              downloadLink.href = blobUrl;
+                                              downloadLink.download = "notice_attachment.pdf";
+                                              document.body.appendChild(downloadLink);
+                                              downloadLink.click();
+
+                                              // Clean up
+                                              document.body.removeChild(downloadLink);
+                                              URL.revokeObjectURL(blobUrl);
+
+                                              // Show success message
+                                              toast.success("Download started", {
+                                                id: toastId,
+                                              });
+                                            })
+                                            .catch((error) => {
+                                              console.error(
+                                                "Download failed:",
+                                                error
+                                              );
+                                              toast.error(
+                                                "Download failed. Try again or save directly from viewer.",
+                                                { id: toastId }
+                                              );
+                                            });
+                                        }}
+                                      >
+                                        <FileText className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </Card>
+                            </div>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">No notices available</p>
               )}
             </CardContent>
           </Card>
